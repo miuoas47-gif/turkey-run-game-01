@@ -1,105 +1,136 @@
-// Turkey Run — all sound is synthesized with WebAudio oscillators.
-// One clear job: gobbles, pickups, alarms, hits and a plucky farm tune.
+// All sound in Turkey Run! is synthesised with WebAudio — no audio files.
+// One job: effects (gobble, jump, coin, thud, yell, fanfare) and a plucky loop.
 
-let audioContext = null;
-let musicTimer = null;
-let muted = false;
-let musicStep = 0;
-
-// A cheerful little farm melody, notes as [frequency, beats].
-const MELODY = [
-  [523, 1], [659, 1], [784, 1], [659, 1], [880, 2], [784, 1], [659, 1],
-  [587, 1], [523, 2], [0, 1], [523, 1], [659, 1], [784, 1], [880, 1],
-  [784, 2], [659, 1], [587, 1], [523, 2], [0, 1],
-];
-
-export function ensureAudioContext() {
-  if (!audioContext) {
-    try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audioContext = null; }
+export class SoundBank {
+  constructor() {
+    this.ctx = null;
+    this.muted = false;
+    this.musicTimer = null;
+    this.musicStep = 0;
+    // A cheerful autumn jig, one note per step (Hz, 0 = rest).
+    this.melody = [
+      523, 659, 784, 659, 587, 659, 523, 0,
+      587, 698, 880, 698, 659, 587, 523, 0,
+      523, 659, 784, 880, 784, 659, 587, 659,
+      587, 523, 587, 0, 392, 0, 523, 0,
+    ];
   }
-  if (audioContext && audioContext.state === 'suspended') audioContext.resume();
-  return audioContext;
-}
 
-export function isMuted() { return muted; }
+  // Must be called from a user gesture at least once.
+  unlock() {
+    if (!this.ctx) {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AC();
+      } catch (e) {
+        this.ctx = null;
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+  }
 
-export function toggleMute() {
-  muted = !muted;
-  if (muted) stopFarmMusic();
-  return muted;
-}
+  setMuted(muted) {
+    this.muted = muted;
+    if (muted) this.stopMusic();
+    else this.startMusic();
+  }
 
-function playTone(freq, durMs, type, volume, whenMs = 0) {
-  if (muted) return;
-  const ctx = ensureAudioContext();
-  if (!ctx) return;
-  const t0 = ctx.currentTime + whenMs / 1000;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = type || 'sine';
-  osc.frequency.setValueAtTime(freq, t0);
-  gain.gain.setValueAtTime(volume || 0.12, t0);
-  gain.gain.exponentialRampToValueAtTime(0.001, t0 + durMs / 1000);
-  osc.connect(gain); gain.connect(ctx.destination);
-  osc.start(t0); osc.stop(t0 + durMs / 1000 + 0.02);
-}
+  tone(freq, dur, type, vol, when = 0, slideTo = 0) {
+    if (!this.ctx || this.muted) return;
+    const t0 = this.ctx.currentTime + when;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.02);
+  }
 
-export function playGobble() {
-  // Gobble-gobble: three quick descending blips.
-  playTone(320, 90, 'square', 0.10, 0);
-  playTone(260, 90, 'square', 0.10, 110);
-  playTone(210, 140, 'square', 0.10, 220);
-}
+  noise(dur, vol, when = 0, lowpass = 1200) {
+    if (!this.ctx || this.muted) return;
+    const t0 = this.ctx.currentTime + when;
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = lowpass;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+    src.start(t0);
+  }
 
-export function playCornPickup() {
-  playTone(880, 90, 'sine', 0.14, 0);
-  playTone(1318, 140, 'sine', 0.12, 80);
-}
+  click() { this.tone(660, 0.06, 'square', 0.08); }
+  jump() { this.tone(280, 0.18, 'sine', 0.16, 0, 620); }
+  dash() { this.noise(0.16, 0.12, 0, 2400); this.tone(500, 0.14, 'triangle', 0.1, 0, 900); }
 
-export function playGoldenPickup() {
-  [880, 1108, 1318, 1760].forEach((f, i) => playTone(f, 120, 'triangle', 0.12, i * 70));
-}
+  coin() {
+    this.tone(988, 0.09, 'triangle', 0.14);
+    this.tone(1319, 0.16, 'triangle', 0.14, 0.08);
+  }
 
-export function playDashFlap() {
-  playTone(500, 80, 'triangle', 0.08, 0);
-  playTone(700, 80, 'triangle', 0.08, 70);
-}
+  feather() {
+    this.tone(784, 0.1, 'sine', 0.14);
+    this.tone(1047, 0.1, 'sine', 0.14, 0.09);
+    this.tone(1568, 0.2, 'sine', 0.12, 0.18);
+  }
 
-export function playSpottedAlarm() {
-  playTone(220, 160, 'sawtooth', 0.10, 0);
-  playTone(330, 160, 'sawtooth', 0.10, 160);
-}
+  thud() {
+    this.noise(0.18, 0.22, 0, 500);
+    this.tone(110, 0.2, 'sine', 0.22, 0, 55);
+  }
 
-export function playHitThud() {
-  playTone(140, 220, 'sawtooth', 0.16, 0);
-  playTone(90, 260, 'square', 0.12, 40);
-}
+  gobble() {
+    // Three quick descending clucks, like a turkey objecting loudly.
+    for (let i = 0; i < 3; i++) {
+      this.tone(420 - i * 60, 0.09, 'sawtooth', 0.1, i * 0.11, 240 - i * 40);
+    }
+  }
 
-export function playKnifeWhizz() { playTone(1200, 160, 'sine', 0.05, 0); }
+  yell() {
+    // The farmer spots you: a rising shout.
+    this.tone(180, 0.5, 'sawtooth', 0.16, 0, 520);
+    this.tone(220, 0.4, 'square', 0.07, 0.05, 440);
+  }
 
-export function playStageClear() {
-  [523, 659, 784, 1046].forEach((f, i) => playTone(f, 180, 'triangle', 0.13, i * 110));
-}
+  winFanfare() {
+    const notes = [523, 659, 784, 1047, 784, 1047, 1319];
+    notes.forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.16, i * 0.13));
+    this.tone(262, 0.9, 'triangle', 0.1, 0.1);
+  }
 
-export function playEscapeFanfare() {
-  [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => playTone(f, 220, 'triangle', 0.14, i * 140));
-}
+  lose() {
+    const notes = [392, 330, 262, 196];
+    notes.forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.14, i * 0.22));
+  }
 
-export function playCaughtSadTrombone() {
-  [392, 370, 349, 311].forEach((f, i) => playTone(f, 320, 'sawtooth', 0.09, i * 260));
-}
+  startMusic() {
+    if (!this.ctx || this.muted || this.musicTimer) return;
+    this.musicTimer = setInterval(() => {
+      if (this.muted || !this.ctx) return;
+      const f = this.melody[this.musicStep % this.melody.length];
+      this.musicStep++;
+      if (f) this.tone(f, 0.16, 'triangle', 0.045);
+      if (this.musicStep % 4 === 1) this.tone(131, 0.2, 'sine', 0.05);
+    }, 170);
+  }
 
-export function startFarmMusic() {
-  if (muted || musicTimer) return;
-  ensureAudioContext();
-  musicTimer = setInterval(() => {
-    if (muted) return;
-    const note = MELODY[musicStep % MELODY.length];
-    musicStep += 1;
-    if (note[0] > 0) playTone(note[0], 260, 'triangle', 0.045, 0);
-  }, 300);
-}
-
-export function stopFarmMusic() {
-  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  stopMusic() {
+    if (this.musicTimer) {
+      clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
+  }
 }

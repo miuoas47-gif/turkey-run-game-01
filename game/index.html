@@ -3,18 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Turkey Run! — Gobble or Be Gobbled</title>
-<link rel="stylesheet" href="style.css">
+<title>Turkey Run! — The Great Thanksgiving Escape</title>
+<meta name="description" content="Tilly the turkey escapes Farmer Jed before Thanksgiving: jump fences, dodge ovens and carving knives, and reach the forest gate 1000 m away. An original game built for make.fun.">
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<header>
-  <h1>🦃 TURKEY RUN!</h1>
-  <p>Gobble or be gobbled — escape Thanksgiving dinner across the farm, the barn yard and the kitchen.</p>
-</header>
-<canvas id="turkey-run-canvas" width="1280" height="720" aria-label="Turkey Run game canvas"></canvas>
-<footer>
-  Move: <kbd>WASD</kbd> / <kbd>←↑↓→</kbd> or click to run there &nbsp;•&nbsp; <kbd>Space</kbd> flap-dash &nbsp;•&nbsp; <kbd>P</kbd> pause &nbsp;•&nbsp; <kbd>M</kbd> mute &nbsp;•&nbsp; Hide in the hay to lose the farmer!
-</footer>
-<script type="module" src="src/main.js"></script>
+<main class="stage">
+  <canvas id="game" width="960" height="540" aria-label="Turkey Run game canvas"></canvas>
+  <p class="hint">SPACE / click — jump &nbsp;·&nbsp; ↓ — slide &nbsp;·&nbsp; SHIFT — dash &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mute</p>
+  <noscript><p class="hint">Turkey Run! needs JavaScript to play.</p></noscript>
+</main>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

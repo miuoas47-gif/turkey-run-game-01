@@ -1,63 +1,114 @@
-// Turkey Run — shared constants, stage plan and seeded randomness.
-// One clear job: every tunable number and stage definition lives here.
+// Tuning, stages and the autumn palette for Turkey Run!
+// One job: every number the rest of the game agrees on lives here.
 
-export const CANVAS_WIDTH = 1280;
-export const CANVAS_HEIGHT = 720;
-export const GROUND_TOP = 150;
-export const GROUND_BOTTOM = 668;
-export const GATE_X = 1196;
-export const START_X = 130;
-export const START_Y = 430;
+export const VIEW_W = 960;
+export const VIEW_H = 540;
+export const GROUND_Y = 462;
+export const PLAYER_X = 190;
 
-// The escape route: farmyard by day, barn yard at dusk, the kitchen at night.
+export const GOAL_DISTANCE = 1000; // metres to the forest gate
+export const START_LIVES = 3;
+export const GRAVITY = 2600;
+export const JUMP_VELOCITY = -880;
+export const DASH_TIME = 0.45;
+export const DASH_COOLDOWN = 2.2;
+export const DASH_SPEED_BONUS = 260;
+
+// Speed in px/s at the start, growing with distance. px per metre is 6.
+export const BASE_SPEED = 300;
+export const MAX_SPEED = 620;
+export const PX_PER_METRE = 6;
+
 export const STAGES = [
   {
-    name: 'STAGE 1 — THE FARMYARD',
-    place: 'Farmyard',
-    skyTop: '#7ec8f7', skyBottom: '#ffe9b0', sun: '#ffd94d',
-    ground: '#8a6b3f', grass: '#7fae4e', mood: 'Morning — the farmer is still yawning.',
-    farmerSpeed: 168, knifeEveryMs: 3400, ovenCount: 1, cornCount: 9,
+    id: 'farmyard',
+    name: 'The Farmyard',
+    from: 0,
+    to: 300,
+    skyTop: '#f9b95c',
+    skyBottom: '#ffe9b8',
+    hill: '#c98f3d',
+    hillFar: '#e0aa58',
+    ground: '#b97e35',
+    groundTop: '#d9a44a',
+    accent: '#7a4a1f',
   },
   {
-    name: 'STAGE 2 — THE BARN YARD',
-    place: 'Barn Yard',
-    skyTop: '#e8915a', skyBottom: '#f7c98a', sun: '#ff9d45',
-    ground: '#7d5f38', grass: '#8f9a44', mood: 'Dusk — the farmer is angry now. Hide in the hay!',
-    farmerSpeed: 196, knifeEveryMs: 2700, ovenCount: 2, cornCount: 10,
+    id: 'barn',
+    name: 'The Old Barn',
+    from: 300,
+    to: 650,
+    skyTop: '#e08a4e',
+    skyBottom: '#f7cf8e',
+    hill: '#8a5a2b',
+    hillFar: '#b57a3a',
+    ground: '#8a5a28',
+    groundTop: '#a9743a',
+    accent: '#5d3a17',
   },
   {
-    name: 'STAGE 3 — THE KITCHEN',
-    place: 'Kitchen',
-    skyTop: '#5a3a4a', skyBottom: '#8a5a3a', sun: '#f2e6c9',
-    ground: '#6b4a3a', grass: '#a8876a', mood: 'Night — ovens roaring, knives flying. The back door is near!',
-    farmerSpeed: 224, knifeEveryMs: 2100, ovenCount: 3, cornCount: 10,
+    id: 'kitchen',
+    name: 'The Kitchen!',
+    from: 650,
+    to: 1000,
+    skyTop: '#c96a3e',
+    skyBottom: '#f2b06a',
+    hill: '#6e3f22',
+    hillFar: '#96582e',
+    ground: '#7c4a26',
+    groundTop: '#9c6238',
+    accent: '#4a2a12',
   },
 ];
 
-export const TURKEY = {
-  walkSpeed: 250, dashSpeed: 470, dashMs: 240, dashCooldownMs: 1400,
-  radius: 30, startLives: 3,
+export function stageFor(distance) {
+  for (const s of STAGES) {
+    if (distance < s.to) return s;
+  }
+  return STAGES[STAGES.length - 1];
+}
+
+// Hazard kinds. w/h are collision box sizes; drawHeight is visual height.
+export const HAZARDS = {
+  fence: { w: 26, h: 74, score: 10, label: 'fence' },
+  hay: { w: 64, h: 58, score: 10, label: 'hay bale' },
+  crate: { w: 56, h: 62, score: 10, label: 'crate' },
+  pitchfork: { w: 22, h: 88, score: 15, label: 'pitchfork' },
+  oven: { w: 92, h: 118, score: 20, label: 'oven' },
+  knife: { w: 30, h: 96, score: 20, label: 'carving knife' },
+  pin: { w: 54, h: 54, score: 15, label: 'rolling pin' },
 };
 
-export const FARMER = { radius: 34, spotRange: 330, loseRange: 430 };
+// Which hazards each stage may spawn, with relative weights.
+export const STAGE_HAZARDS = {
+  farmyard: [['fence', 5], ['hay', 4], ['mud', 3]],
+  barn: [['crate', 4], ['pitchfork', 4], ['fence', 3], ['hay', 3], ['mud', 2]],
+  kitchen: [['oven', 4], ['knife', 5], ['pin', 4], ['crate', 2]],
+};
 
-export const SCORE = { corn: 10, goldenCorn: 50, stageClear: 150, escape: 500 };
+export const COLLECTIBLES = {
+  corn: { points: 50, gap: 6, label: 'corn' },
+  feather: { points: 150, gap: 10, label: 'golden feather' },
+  pie: { points: 100, gap: 4, label: 'pumpkin pie' },
+};
 
-// Small deterministic RNG (mulberry32) so screenshot states are reproducible.
-export function makeSeededRandom(seed) {
-  let a = seed >>> 0;
-  return function seededRandom() {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function clamp(value, min, max) {
-  return value < min ? min : value > max ? max : value;
-}
-
-export function distanceBetween(ax, ay, bx, by) {
-  return Math.hypot(ax - bx, ay - by);
-}
+export const PALETTE = {
+  turkeyBody: '#8a5a2b',
+  turkeyDark: '#6b4420',
+  turkeyLight: '#b07a3e',
+  turkeyHead: '#e8b04b',
+  wattle: '#d43d2a',
+  beak: '#e8912d',
+  featherBrown: '#a06a30',
+  featherCream: '#e8c98a',
+  farmerShirt: '#4a7ab5',
+  farmerOveralls: '#3d5a80',
+  farmerSkin: '#f2c89b',
+  farmerHat: '#7a5a2e',
+  knifeBlade: '#dfe6ea',
+  knifeHandle: '#5a3a1e',
+  ovenBody: '#5e5e66',
+  ovenDoor: '#2e2e33',
+  cornYellow: '#ffd23e',
+  gold: '#ffc93c',
+};

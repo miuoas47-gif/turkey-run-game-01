@@ -1,62 +1,76 @@
-// Turkey Run — keyboard and mouse input, kept in one place.
-// One clear job: turn keys and clicks into a clean input state.
+// Keyboard, mouse and touch input for Turkey Run!
+// One job: turn raw events into edge-triggered game actions, and report
+// clicks in canvas coordinates so menus can use them.
 
-export function createInputState() {
-  return {
-    up: false, down: false, left: false, right: false,
-    dashPressed: false, mouseX: 0, mouseY: 0,
-    clicked: false, clickX: 0, clickY: 0,
-  };
-}
+export class Input {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.keys = new Set();
+    this.jumpQueued = false;
+    this.dashQueued = false;
+    this.pauseQueued = false;
+    this.restartQueued = false;
+    this.muteQueued = false;
+    this.slideHeld = false;
+    this.click = null; // {x, y} in canvas coordinates, consumed by the game
+    this.anyGesture = false;
 
-const KEY_MAP = {
-  ArrowUp: 'up', KeyW: 'up',
-  ArrowDown: 'down', KeyS: 'down',
-  ArrowLeft: 'left', KeyA: 'left',
-  ArrowRight: 'right', KeyD: 'right',
-};
+    window.addEventListener('keydown', (e) => {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
+      if (e.repeat) return;
+      this.keys.add(e.code);
+      this.anyGesture = true;
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') this.jumpQueued = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyX') this.dashQueued = true;
+      if (e.code === 'KeyP' || e.code === 'Escape') this.pauseQueued = true;
+      if (e.code === 'KeyR' || e.code === 'Enter') this.restartQueued = true;
+      if (e.code === 'KeyM') this.muteQueued = true;
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') this.slideHeld = true;
+    });
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') this.slideHeld = false;
+    });
 
-export function attachInputHandlers(canvas, input, callbacks) {
-  window.addEventListener('keydown', (event) => {
-    const field = KEY_MAP[event.code];
-    if (field) { input[field] = true; event.preventDefault(); }
-    if (event.code === 'Space') {
-      if (!event.repeat) input.dashPressed = true;
-      event.preventDefault();
-    }
-    if (event.code === 'Enter') callbacks.onEnter();
-    if (event.code === 'KeyM') callbacks.onMute();
-    if (event.code === 'KeyP') callbacks.onPause();
-  });
-  window.addEventListener('keyup', (event) => {
-    const field = KEY_MAP[event.code];
-    if (field) input[field] = false;
-  });
-  canvas.addEventListener('mousemove', (event) => {
-    const rect = canvas.getBoundingClientRect();
-    input.mouseX = (event.clientX - rect.left) * (canvas.width / rect.width);
-    input.mouseY = (event.clientY - rect.top) * (canvas.height / rect.height);
-  });
-  canvas.addEventListener('click', (event) => {
-    const rect = canvas.getBoundingClientRect();
-    input.clickX = (event.clientX - rect.left) * (canvas.width / rect.width);
-    input.clickY = (event.clientY - rect.top) * (canvas.height / rect.height);
-    input.clicked = true;
-    callbacks.onClick(input.clickX, input.clickY);
-  });
-}
-
-// Direction from held keys; falls back to a mouse-click target when set.
-export function readMoveDirection(input, target) {
-  let dx = 0, dy = 0;
-  if (input.left) dx -= 1;
-  if (input.right) dx += 1;
-  if (input.up) dy -= 1;
-  if (input.down) dy += 1;
-  if (dx === 0 && dy === 0 && target) {
-    const tx = target.x - (target.px || 0), ty = target.y - (target.py || 0);
-    if (Math.hypot(tx, ty) > 14) { dx = tx; dy = ty; }
+    const press = (clientX, clientY) => {
+      this.anyGesture = true;
+      this.jumpQueued = true;
+      const rect = canvas.getBoundingClientRect();
+      const x = (clientX - rect.left) * (canvas.width / rect.width);
+      const y = (clientY - rect.top) * (canvas.height / rect.height);
+      this.click = { x, y };
+    };
+    canvas.addEventListener('mousedown', (e) => press(e.clientX, e.clientY));
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      press(t.clientX, t.clientY);
+    }, { passive: false });
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.slideHeld = false;
+    });
   }
-  const len = Math.hypot(dx, dy);
-  return len > 0 ? { x: dx / len, y: dy / len } : { x: 0, y: 0 };
+
+  // Edge-triggered actions: each returns true once, then clears.
+  takeJump() { const v = this.jumpQueued; this.jumpQueued = false; return v; }
+  takeDash() { const v = this.dashQueued; this.dashQueued = false; return v; }
+  takePause() { const v = this.pauseQueued; this.pauseQueued = false; return v; }
+  takeRestart() { const v = this.restartQueued; this.restartQueued = false; return v; }
+  takeMute() { const v = this.muteQueued; this.muteQueued = false; return v; }
+  takeClick() { const v = this.click; this.click = null; return v; }
+
+  // Held state, for sliding.
+  sliding() { return this.slideHeld || this.keys.has('ArrowDown') || this.keys.has('KeyS'); }
+
+  clearQueues() {
+    this.jumpQueued = false;
+    this.dashQueued = false;
+    this.pauseQueued = false;
+    this.restartQueued = false;
+    this.muteQueued = false;
+    this.click = null;
+  }
 }

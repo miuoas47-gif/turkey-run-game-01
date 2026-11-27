@@ -1,169 +1,243 @@
-// Turkey Run — HUD, title screen and end screens, all drawn on the canvas.
-// One clear job: everything the player reads on screen.
+// HUD and menu screens for Turkey Run!
+// One job: everything drawn on top of the world — scores, hearts, buttons,
+// title screen, pause, caught and escaped screens.
 
-import { CANVAS_WIDTH, STAGES } from './config.js';
+import { GOAL_DISTANCE, VIEW_H, VIEW_W } from './config.js';
 
-export function drawHud(ctx, state) {
-  const stage = STAGES[state.stageIndex];
-  // Top bar.
-  ctx.fillStyle = 'rgba(20,16,10,0.72)';
-  ctx.fillRect(0, 0, CANVAS_WIDTH, 64);
-  ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.font = 'bold 26px sans-serif';
-  ctx.fillText(`SCORE ${state.score}`, 18, 40);
-  ctx.font = 'bold 22px sans-serif';
-  ctx.fillText(`DISTANCE ${Math.floor(state.distanceM)} m`, 250, 38);
-  ctx.fillText(stage.place.toUpperCase(), 520, 38);
-  // Lives as hearts.
-  for (let i = 0; i < 3; i++) {
-    ctx.fillStyle = i < state.turkey.lives ? '#ff4d6d' : 'rgba(255,255,255,0.25)';
-    drawHeart(ctx, 760 + i * 36, 30, 13);
-  }
-  ctx.fillStyle = '#ffd94d'; ctx.font = 'bold 20px sans-serif';
-  ctx.fillText(`CORN ${state.cornCollected}`, 880, 38);
-  if (state.turkey.shield) { ctx.fillStyle = '#7ec8ff'; ctx.fillText('SHIELD', 1000, 38); }
-  ctx.fillStyle = state.muted ? '#ffb84d' : '#cfe8ff';
-  ctx.fillText(state.muted ? 'MUTED (M)' : 'M = MUTE', 1120, 38);
-  // Escape progress bar, on a dark pill so clouds never wash it out.
-  const progress = Math.min(1, state.stageProgress);
-  ctx.fillStyle = 'rgba(20,16,10,0.55)';
-  ctx.fillRect(10, 68, 500, 36);
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.fillRect(18, 72, 300, 12);
-  ctx.fillStyle = '#7ed957';
-  ctx.fillRect(18, 72, 300 * progress, 12);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif';
-  ctx.fillText('ESCAPE PROGRESS', 330, 84);
-  // Dash cooldown.
-  const dashReady = state.turkey.dashCooldownMs <= 0;
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.fillRect(18, 92, 140, 8);
-  ctx.fillStyle = dashReady ? '#ffd94d' : '#8a8a8a';
-  ctx.fillRect(18, 92, 140 * (dashReady ? 1 : 1 - state.turkey.dashCooldownMs / 1400), 8);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px sans-serif';
-  ctx.fillText(dashReady ? 'DASH READY (SPACE)' : 'DASH…', 166, 100);
-  // Stage banner and danger toast.
-  if (state.bannerMs > 0) {
-    ctx.fillStyle = 'rgba(20,16,10,0.8)';
-    ctx.fillRect(340, 120, 600, 64);
-    ctx.fillStyle = '#ffd94d'; ctx.font = 'bold 28px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(stage.name, 640, 150);
-    ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif';
-    ctx.fillText(stage.mood, 640, 174);
-    ctx.textAlign = 'left';
-  }
-  if (state.toast) {
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(state.toast, 640, 210);
-    ctx.textAlign = 'left';
-  }
-  if (state.paused) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, CANVAS_WIDTH, 720);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 44px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('PAUSED — press P to run again', 640, 360);
-    ctx.textAlign = 'left';
-  }
+export const BUTTONS = {
+  start: { x: VIEW_W / 2 - 150, y: 424, w: 300, h: 56 },
+  restart: { x: VIEW_W / 2 - 150, y: 408, w: 300, h: 56 },
+  again: { x: VIEW_W / 2 - 150, y: 420, w: 300, h: 56 },
+  mute: { x: VIEW_W - 52, y: 10, w: 42, h: 34 },
+  pause: { x: VIEW_W - 100, y: 10, w: 42, h: 34 },
+};
+
+function inRect(r, p) {
+  return p && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
 }
 
-function drawHeart(ctx, x, y, size) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(size / 10, size / 10);
+export function hitButton(name, point) {
+  return inRect(BUTTONS[name], point);
+}
+
+function panel(ctx, x, y, w, h, alpha = 0.88) {
+  ctx.save();
+  ctx.fillStyle = `rgba(46,26,10,${alpha})`;
   ctx.beginPath();
-  ctx.moveTo(0, 3);
-  ctx.bezierCurveTo(-8, -5, -4, -11, 0, -5);
-  ctx.bezierCurveTo(4, -11, 8, -5, 0, 3);
-  ctx.fill(); ctx.restore();
-}
-
-export function drawTitleScreen(ctx, bestScore, timeMs) {
-  ctx.fillStyle = '#2b1a08'; ctx.fillRect(0, 0, CANVAS_WIDTH, 720);
-  const sky = ctx.createLinearGradient(0, 0, 0, 720);
-  sky.addColorStop(0, '#7ec8f7'); sky.addColorStop(0.6, '#ffe9b0'); sky.addColorStop(1, '#8a6b3f');
-  ctx.fillStyle = sky; ctx.fillRect(0, 0, 1280, 720);
-  ctx.fillStyle = '#ffd94d';
-  ctx.beginPath(); ctx.arc(1100, 100, 48, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#3f7a2e';
-  ctx.beginPath(); ctx.arc(120, 560, 90, Math.PI, 0); ctx.fill();
-  ctx.beginPath(); ctx.arc(1160, 580, 80, Math.PI, 0); ctx.fill();
-  // Big friendly turkey mascot, drawn in code.
-  drawTitleTurkey(ctx, 640, 300, timeMs);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 84px sans-serif';
-  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
-  ctx.fillText('TURKEY RUN!', 640, 130);
-  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.fillStyle = '#7a2e00'; ctx.font = 'bold 30px sans-serif';
-  ctx.fillText('Gobble or be gobbled — escape Thanksgiving dinner!', 640, 175);
-  ctx.fillStyle = '#2b1a08'; ctx.font = '20px sans-serif';
-  ctx.fillText('The farmer is after you. Dodge the ovens and the carving knives,', 640, 480);
-  ctx.fillText('grab the corn, hide in the hay — and reach the forest gate!', 640, 510);
-  ctx.font = 'bold 20px sans-serif';
-  ctx.fillText('Move: WASD / Arrow keys or click to run there  •  SPACE: flap-dash  •  P: pause  •  M: mute', 640, 552);
-  // Start button.
-  const pulse = 1 + Math.sin(timeMs / 300) * 0.03;
-  ctx.save(); ctx.translate(640, 620); ctx.scale(pulse, pulse);
-  ctx.fillStyle = '#ff6a1a';
-  ctx.beginPath(); ctx.roundRect(-170, -32, 340, 64, 32); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 32px sans-serif';
-  ctx.fillText('▶  START THE ESCAPE', 0, 11);
+  ctx.roundRect(x, y, w, h, 14);
+  ctx.fill();
+  ctx.strokeStyle = '#e8c98a';
+  ctx.lineWidth = 2;
+  ctx.stroke();
   ctx.restore();
-  ctx.fillStyle = '#2b1a08'; ctx.font = '18px sans-serif';
-  ctx.fillText(`Best escape score: ${bestScore}`, 640, 692);
-  ctx.textAlign = 'left';
 }
 
-function drawTitleTurkey(ctx, x, y, timeMs) {
-  const bob = Math.sin(timeMs / 400) * 6;
-  ctx.save(); ctx.translate(x, y + bob);
-  for (let i = -2; i <= 2; i++) {
-    ctx.fillStyle = ['#7a4a1f', '#a06a35', '#c98a3f', '#8a5a2b', '#b5762f'][i + 2];
-    ctx.beginPath(); ctx.ellipse(i * 26 - 10, -30, 30, 13, i * 0.4, 0, Math.PI * 2); ctx.fill();
+function button(ctx, rect, label, sub) {
+  ctx.save();
+  ctx.fillStyle = '#d43d2a';
+  ctx.beginPath();
+  ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#fff3d6';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 - (sub ? 8 : 0));
+  if (sub) {
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText(sub, rect.x + rect.w / 2, rect.y + rect.h - 16);
   }
-  ctx.fillStyle = '#8a5a2b';
-  ctx.beginPath(); ctx.ellipse(0, 0, 62, 46, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#a06a35';
-  ctx.beginPath(); ctx.ellipse(-6, 12, 46, 30, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 12; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(40, -20); ctx.lineTo(56, -58); ctx.stroke();
-  ctx.fillStyle = '#a06a35';
-  ctx.beginPath(); ctx.arc(58, -66, 26, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#ff9d2e';
-  ctx.beginPath(); ctx.moveTo(80, -70); ctx.lineTo(108, -60); ctx.lineTo(80, -52); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#d23b2e';
-  ctx.beginPath(); ctx.ellipse(62, -46, 8, 14, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(66, -74, 9, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(68, -74, 4.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
-export function drawEndScreen(ctx, state) {
-  const escaped = state.endKind === 'escaped';
-  ctx.fillStyle = escaped ? 'rgba(20,60,30,0.82)' : 'rgba(60,10,10,0.82)';
-  ctx.fillRect(0, 0, CANVAS_WIDTH, 720);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 72px sans-serif';
-  ctx.fillText(escaped ? 'ESCAPED!' : 'CAUGHT!', 640, 190);
-  ctx.font = 'bold 30px sans-serif';
-  ctx.fillStyle = '#ffd94d';
-  ctx.fillText(
-    escaped ? 'You made it to the forest. No Thanksgiving dinner for you!' : 'The farmer got you… Thanksgiving dinner it is.',
-    640, 245,
-  );
-  ctx.fillStyle = '#fff'; ctx.font = '26px sans-serif';
-  ctx.fillText(`Score: ${state.score}    •    Distance: ${Math.floor(state.distanceM)} m    •    Corn: ${state.cornCollected}`, 640, 320);
-  ctx.fillText(`Stages cleared: ${state.stagesCleared}    •    Best score: ${state.bestScore}`, 640, 360);
-  ctx.font = '20px sans-serif';
-  ctx.fillText('Press ENTER or click below to run again — the farmer never gives up.', 640, 410);
-  ctx.fillStyle = '#ff6a1a';
-  ctx.beginPath(); ctx.roundRect(470, 450, 340, 64, 32); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 30px sans-serif';
-  ctx.fillText('↻  RUN AGAIN', 640, 492);
-  ctx.textAlign = 'left';
+function heart(ctx, x, y, filled) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = filled ? '#d43d2a' : 'rgba(255,255,255,0.25)';
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.bezierCurveTo(-11, -4, -7, -13, 0, -6);
+  ctx.bezierCurveTo(7, -13, 11, -4, 0, 6);
+  ctx.fill();
+  ctx.restore();
 }
 
-// Button hit areas, shared by the click handler.
-export const TITLE_START_BUTTON = { x: 470, y: 588, w: 340, h: 64 };
-export const END_RESTART_BUTTON = { x: 470, y: 450, w: 340, h: 64 };
+export function drawHUD(ctx, s) {
+  // Top bar
+  ctx.save();
+  ctx.fillStyle = 'rgba(46,26,10,0.55)';
+  ctx.fillRect(0, 0, VIEW_W, 52);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.fillText(`SCORE ${s.score}`, 16, 18);
+  ctx.font = '15px system-ui, sans-serif';
+  ctx.fillStyle = '#ffe9b8';
+  ctx.fillText(`BEST ${s.best}`, 16, 40);
+  // Distance, centred
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.fillStyle = '#fff8e6';
+  ctx.fillText(`${Math.floor(s.distance)} m / ${GOAL_DISTANCE} m`, VIEW_W / 2, 18);
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillStyle = '#ffd23e';
+  ctx.fillText(s.stageName, VIEW_W / 2, 40);
+  // Hearts
+  for (let i = 0; i < 3; i++) heart(ctx, VIEW_W - 190 - i * 30, 26, i < s.lives);
+  // Farmer gap bar: how close Jed is behind you.
+  const barX = 16, barY = VIEW_H - 30, barW = 260, barH = 14;
+  ctx.fillStyle = 'rgba(46,26,10,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(barX - 6, barY - 18, barW + 12, 40, 8);
+  ctx.fill();
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('FARMER JED', barX, barY - 8);
+  ctx.fillStyle = '#3a2a16';
+  ctx.fillRect(barX, barY, barW, barH);
+  const gapW = (s.farmerGap / 100) * barW;
+  ctx.fillStyle = s.farmerGap < 28 ? '#d43d2a' : '#4e8a2f';
+  ctx.fillRect(barX, barY, gapW, barH);
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText(s.farmerGap < 28 ? 'HE IS RIGHT BEHIND YOU!' : 'keep running!', barX + barW + 10, barY + 7);
+  // Dash meter, bottom right
+  const dashW = 130;
+  ctx.fillStyle = 'rgba(46,26,10,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(VIEW_W - dashW - 22, barY - 18, dashW + 12, 40, 8);
+  ctx.fill();
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillText('DASH (SHIFT)', VIEW_W - dashW - 16, barY - 8);
+  ctx.fillStyle = '#3a2a16';
+  ctx.fillRect(VIEW_W - dashW - 16, barY, dashW, barH);
+  ctx.fillStyle = '#ffd23e';
+  ctx.fillRect(VIEW_W - dashW - 16, barY, dashW * s.dashReady, barH);
+  // Small mute / pause buttons
+  ctx.fillStyle = 'rgba(46,26,10,0.6)';
+  ctx.beginPath();
+  ctx.roundRect(BUTTONS.mute.x, BUTTONS.mute.y, BUTTONS.mute.w, BUTTONS.mute.h, 8);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(BUTTONS.pause.x, BUTTONS.pause.y, BUTTONS.pause.w, BUTTONS.pause.h, 8);
+  ctx.fill();
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 17px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(s.muted ? '✕' : '♪', BUTTONS.mute.x + 21, BUTTONS.mute.y + 18);
+  ctx.fillText('II', BUTTONS.pause.x + 21, BUTTONS.pause.y + 18);
+  ctx.restore();
+}
 
-export function pointInButton(x, y, button) {
-  return x >= button.x && x <= button.x + button.w && y >= button.y && y <= button.y + button.h;
+export function drawTitle(ctx, s, time) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(46,26,10,0.45)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 64px Georgia, serif';
+  ctx.fillText('TURKEY RUN!', VIEW_W / 2, 96);
+  ctx.font = 'italic 22px Georgia, serif';
+  ctx.fillStyle = '#ffd23e';
+  ctx.fillText('The Great Thanksgiving Escape', VIEW_W / 2, 140);
+  ctx.font = '17px system-ui, sans-serif';
+  ctx.fillStyle = '#fff8e6';
+  ctx.fillText('Thanksgiving is coming and Farmer Jed has picked YOU for dinner.', VIEW_W / 2, 188);
+  ctx.fillText('Outrun him through the farmyard, the barn and the kitchen —', VIEW_W / 2, 214);
+  ctx.fillText('dodge fences, ovens and carving knives, grab the corn,', VIEW_W / 2, 240);
+  ctx.fillText('and reach the forest gate 1000 m away to live free!', VIEW_W / 2, 266);
+  ctx.font = 'bold 16px system-ui, sans-serif';
+  ctx.fillStyle = '#ffe9b8';
+  ctx.fillText('SPACE / CLICK — jump      ↓ — slide      SHIFT — dash      P — pause      M — mute', VIEW_W / 2, 312);
+  if (s.best > 0) {
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillStyle = '#ffd23e';
+    ctx.fillText(`BEST SCORE: ${s.best}`, VIEW_W / 2, 348);
+  }
+  button(ctx, BUTTONS.start, '▶  START THE ESCAPE', 'or press SPACE');
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(255,248,230,0.75)';
+  ctx.fillText('An original game — art, music and code made for this bounty.', VIEW_W / 2, 508);
+  ctx.restore();
+}
+
+export function drawPaused(ctx) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(46,26,10,0.6)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  panel(ctx, VIEW_W / 2 - 220, VIEW_H / 2 - 90, 440, 180);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = 'bold 40px Georgia, serif';
+  ctx.fillText('PAUSED', VIEW_W / 2, VIEW_H / 2 - 40);
+  ctx.font = '17px system-ui, sans-serif';
+  ctx.fillText('Tilly is catching her breath.', VIEW_W / 2, VIEW_H / 2 + 8);
+  ctx.fillText('Press P or click to keep running.', VIEW_W / 2, VIEW_H / 2 + 36);
+  ctx.restore();
+}
+
+export function drawCaught(ctx, s) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(60,10,5,0.55)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  panel(ctx, VIEW_W / 2 - 300, 84, 600, 300);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff9d8a';
+  ctx.font = 'bold 52px Georgia, serif';
+  ctx.fillText('CAUGHT!', VIEW_W / 2, 138);
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = '19px system-ui, sans-serif';
+  ctx.fillText('Farmer Jed got you. The oven was already warm…', VIEW_W / 2, 190);
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.fillStyle = '#ffd23e';
+  ctx.fillText(`SCORE ${s.score}   •   ${Math.floor(s.distance)} m of ${GOAL_DISTANCE} m`, VIEW_W / 2, 232);
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillStyle = '#fff8e6';
+  ctx.fillText(s.distance >= GOAL_DISTANCE - 120
+    ? 'So close to the forest gate! One more run?'
+    : 'Tip: grab corn to slow Jed down — and save your dash for the knives.', VIEW_W / 2, 264);
+  if (s.score >= s.best && s.score > 0) {
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillStyle = '#ffd23e';
+    ctx.fillText('★ NEW BEST SCORE! ★', VIEW_W / 2, 300);
+  }
+  ctx.fillText('Best: ' + s.best, VIEW_W / 2, 330);
+  button(ctx, BUTTONS.restart, '↻  RUN AGAIN', 'or press R');
+  ctx.restore();
+}
+
+export function drawEscaped(ctx, s) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,50,20,0.45)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  panel(ctx, VIEW_W / 2 - 300, 84, 600, 312);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#9fe870';
+  ctx.font = 'bold 52px Georgia, serif';
+  ctx.fillText('ESCAPED!', VIEW_W / 2, 138);
+  ctx.fillStyle = '#fff8e6';
+  ctx.font = '19px system-ui, sans-serif';
+  ctx.fillText('Tilly burst through the forest gate — free at last!', VIEW_W / 2, 190);
+  ctx.fillText('Farmer Jed is still looking for her. Somewhere.', VIEW_W / 2, 218);
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  ctx.fillStyle = '#ffd23e';
+  ctx.fillText(`SCORE ${s.score}   •   ${GOAL_DISTANCE} m in one brave run`, VIEW_W / 2, 258);
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillStyle = '#fff8e6';
+  ctx.fillText(`Hearts left: ${s.lives}   •   Corn eaten: ${s.corn}`, VIEW_W / 2, 290);
+  if (s.score >= s.best && s.score > 0) {
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillStyle = '#ffd23e';
+    ctx.fillText('★ NEW BEST SCORE! ★', VIEW_W / 2, 322);
+  }
+  ctx.fillText('Best: ' + s.best, VIEW_W / 2, 352);
+  button(ctx, BUTTONS.again, '↻  RUN AGAIN', 'or press R');
+  ctx.restore();
 }

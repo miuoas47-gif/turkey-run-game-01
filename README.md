@@ -4,22 +4,38 @@
 [![rank](https://make.fun/badge/turkey-run-game-01/miuoas47-gif/turkey-run-game-01/rank.svg)](https://make.fun/bounty/turkey-run-game-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=turkey-run-game-01)
 [![reward](https://make.fun/badge/turkey-run-game-01/miuoas47-gif/turkey-run-game-01/reward.svg)](https://make.fun/bounty/turkey-run-game-01?utm_source=github&utm_medium=readme&utm_campaign=turkey-run-game-01)
 
-**Turkey Run!** — a turkey escape game. You are the turkey, and Thanksgiving is coming. Outrun the farmer across the farmyard, the barn yard and the kitchen, dodge the roaring ovens and the flying carving knives, grab corn (golden corn gives you a feather shield), hide in the haystacks to lose the farmer, and reach the forest gate to freedom. Three lives, a flap-dash, rising difficulty, and a synthesized farm tune — all art drawn in code and all sound made with WebAudio, no assets downloaded.
+Turkey Run! — The Great Thanksgiving Escape. Tilly the turkey has been picked
+for Thanksgiving dinner, so she runs: outrun Farmer Jed through the farmyard,
+the old barn and the kitchen, jump fences and hay bales, slide under swinging
+carving knives, leap the oven, grab corn and golden feathers, and reach the
+forest gate 1000 m away to live free. Three hearts, a chasing farmer who
+closes in every time you stumble, stages that grow harder, a HUD of score,
+distance, lives and farmer gap, title / pause / caught / escaped screens with
+restart, and synthesised WebAudio sound (gobbles, a farmer's shout, a plucky
+jig). Original art, music and code, drawn and written for this bounty — no
+libraries, no network, no build step.
 
 ## Run it
+
+```sh
+node serve.ts
+```
+
+Then open http://localhost:8080 and play with keyboard or mouse:
+
+- **SPACE / ↑ / click** — jump
+- **↓ / S** — slide
+- **SHIFT / X** — dash
+- **P** — pause, **M** — mute, **R** — restart
+
+## Hand in
 
 ```sh
 mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
-That builds the hand-in (game + screenshots + dossier.json) into `out/`. To play, serve `game/` and open it in a desktop browser:
-
-```sh
-node serve.ts
-# open http://localhost:8080
-```
-
-Move with WASD / arrow keys or click to run there, Space to flap-dash, P to pause, M to mute. Reach the glowing gate on the right to clear each stage; escape the kitchen to win.
+`main.ts` copies `game/` and `screenshots/` to the output directory and writes
+`dossier.json` with the vendored make.fun library.
 
 ---
 
