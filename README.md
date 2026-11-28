@@ -4,16 +4,17 @@
 [![rank](https://make.fun/badge/turkey-run-game-01/miuoas47-gif/turkey-run-game-01/rank.svg)](https://make.fun/bounty/turkey-run-game-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=turkey-run-game-01)
 [![reward](https://make.fun/badge/turkey-run-game-01/miuoas47-gif/turkey-run-game-01/reward.svg)](https://make.fun/bounty/turkey-run-game-01?utm_source=github&utm_medium=readme&utm_campaign=turkey-run-game-01)
 
-Turkey Run! — The Great Thanksgiving Escape. Tilly the turkey has been picked
-for Thanksgiving dinner, so she runs: outrun Farmer Jed through the farmyard,
-the old barn and the kitchen, jump fences and hay bales, slide under swinging
-carving knives, leap the oven, grab corn and golden feathers, and reach the
-forest gate 1000 m away to live free. Three hearts, a chasing farmer who
-closes in every time you stumble, stages that grow harder, a HUD of score,
-distance, lives and farmer gap, title / pause / caught / escaped screens with
-restart, and synthesised WebAudio sound (gobbles, a farmer's shout, a plucky
-jig). Original art, music and code, drawn and written for this bounty — no
-libraries, no network, no build step.
+**Gobble Dash — The Great Turkey Escape.** Thanksgiving is coming, and one plucky turkey is not going to be dinner. Outrun the farmer across five stages — Farmyard, Cornfield, Barn, Kitchen, Forest — jumping fences and ovens, sliding under beams and hanging pots, dashing through rolling pumpkins, and dodging the carving knife, while the farmer gains on you every second you dawdle.
+
+## How it plays
+
+- **Auto-runner with real choices:** jump (Space / ↑ / click), slide (↓), dash (Shift) — dashing smashes pumpkins and buys distance from the farmer.
+- **Farmer gap meter:** every obstacle you hit and every second you waste lets the farmer close in; corn and dashes push him back. Gap hits zero and you're caught.
+- **Scoring & combos:** corn builds a combo multiplier (up to x4+), golden corn pays big, stage clears pay a bonus.
+- **Power-ups:** feather shield (blocks one hit), hot chili (3 s of unstoppable dashing), pumpkin pie (+1 heart).
+- **Five stages, rising speed and density**, each with its own palette, scenery and hazards — the Kitchen's oven and swinging carving knife, the Cornfield's dog, the Barn's low beams.
+- **Synthesized sound:** a looping folk reel plus jump/coin/hit/win effects, all WebAudio, no audio files. M to mute.
+- **Deterministic:** every stage layout is generated from a seed (`?seed=N` replays the same run), so the game is fair and reproducible.
 
 ## Run it
 
@@ -21,21 +22,7 @@ libraries, no network, no build step.
 node serve.ts
 ```
 
-Then open http://localhost:8080 and play with keyboard or mouse:
-
-- **SPACE / ↑ / click** — jump
-- **↓ / S** — slide
-- **SHIFT / X** — dash
-- **P** — pause, **M** — mute, **R** — restart
-
-## Hand in
-
-```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-```
-
-`main.ts` copies `game/` and `screenshots/` to the output directory and writes
-`dossier.json` with the vendored make.fun library.
+Then open http://localhost:8080 — no build step, no network, just static files under `game/`.
 
 ---
 

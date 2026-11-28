@@ -1,36 +1,32 @@
-// Turkey Run! — the program that hands the game in (Node 22, stdlib only).
-//
-// The game is plain static files under game/ and the screenshots under
-// screenshots/. This program copies both into the output directory and writes
-// /output/dossier.json with the vendored make.fun library, so the sealed
-// scorer can check the game and the judge can read it.
-//
-// Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
+// Gobble Dash — the program that hands the game in (Node 22, stdlib only).
+// It runs with no arguments, exits 0, and writes the whole entry to the
+// output directory: game/ and screenshots/ copied verbatim from beside this
+// file, plus dossier.json built from them with the vendored make.fun
+// library. Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-// It takes no arguments, writes the same bytes on every run, and exits 0.
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const root = fileURLToPath(new URL('.', import.meta.url));
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-mkdirSync(out, { recursive: true });
-cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
-mkdirSync(join(out, 'screenshots'), { recursive: true });
-if (existsSync(join(here, 'screenshots'))) {
-  cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
+mkdirSync(outDir, { recursive: true });
+cpSync(join(root, 'game'), join(outDir, 'game'), { recursive: true });
+mkdirSync(join(outDir, 'screenshots'), { recursive: true });
+if (existsSync(join(root, 'screenshots'))) {
+  cpSync(join(root, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
 }
 
-// The scorer's own caps: only text_max_bytes shapes the bytes; the other
-// caps refuse an entry the scorer would refuse (more than 4 screenshots or
-// one over 256 KiB; more than 993 files in game/ or 48 MiB of game files in
-// all, or a path under game/ over 1000 bytes).
+// The caps below mirror the gate's own limits, so a run that succeeds here
+// is one the scorer accepts: at most 4 screenshots of 256 KiB each, game/
+// at most 993 files and 48 MiB in all, paths under 1,000 bytes, and the
+// dossier text capped at 160 KiB.
 writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, {
+  join(outDir, 'dossier.json'),
+  buildDossier(outDir, {
     text_max_bytes: 163840,
     screenshots: { max: 4, max_bytes: 262144 },
     game_max_files: 993,

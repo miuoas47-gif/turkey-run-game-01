@@ -1,352 +1,460 @@
-// Game state machine, loop, collisions and scoring for Turkey Run!
-// One job: tie the turkey, the farmer, the obstacles and the world together.
+// Game: the state machine, physics, collisions and scoring of Gobble Dash.
+// States: title → playing ⇄ paused → stageClear → playing … → caught /
+// escaped. The renderer draws; this file decides what happens.
 
-import {
-  BASE_SPEED, DASH_SPEED_BONUS, GOAL_DISTANCE, GROUND_Y, HAZARDS,
-  MAX_SPEED, PX_PER_METRE, START_LIVES, VIEW_H, VIEW_W, stageFor,
-} from './config.js';
-import { makeRng } from './random.js';
-import { Turkey } from './turkey.js';
-import { Farmer } from './farmer.js';
-import { ObstacleField } from './obstacles.js';
-import { World } from './world.js';
-import { drawHUD, drawTitle, drawPaused, drawCaught, drawEscaped, hitButton } from './hud.js';
-import { SoundBank } from './audio.js';
+import { VIEW, TUNING, STAGES, PICKUPS } from './config.js';
+import { buildStageLayout, pickupY } from './levels.js';
+import { makeTurkey, makeFarmer, turkeyBox, obstacleBox, overlaps, clearsHazard } from './entities.js';
+import { Sound } from './audio.js';
+import { Input } from './input.js';
+import { drawScene, drawHUD, drawTitle, drawBanner, drawEnd, drawPaused } from './render.js';
+
+const { ground: G, turkeyX } = VIEW;
+const PX = TUNING.pxPerMetre;
 
 export class Game {
-  constructor(canvas, input, seed = 20261128) {
+  constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.input = input;
-    this.sound = new SoundBank();
-    this.seed = seed;
-    this.rng = makeRng(seed);
-    this.turkey = new Turkey();
-    this.farmer = new Farmer();
-    this.field = new ObstacleField(this.rng);
-    this.world = new World(this.rng);
+    this.seed = opts.seed ?? 20261128;
+    this.sound = new Sound();
+    this.input = new Input(canvas);
+    this.input.onFirstGesture = () => this.sound.ensure();
     this.state = 'title';
+    this.stateTimer = 0;
+    this.jumpBuffer = 0; // a jump pressed just before landing still fires
     this.time = 0;
-    this.distance = 0;
-    this.score = 0;
-    this.lives = START_LIVES;
+    this.frozen = false; // screenshot mode: render only, never update
     this.best = 0;
-    this.corn = 0;
-    this.speed = BASE_SPEED;
-    this.speedBurst = 0;
-    this.shake = 0;
     this.particles = [];
-    this.stageIndex = 0;
-    this.escapedAt = 0;
+    this.banner = null;
+    this.resetRun();
   }
 
-  start() {
-    this.rng = makeRng(this.seed + Math.floor(this.time * 1000) % 97);
-    this.turkey.reset();
-    this.farmer.reset();
-    this.field = new ObstacleField(this.rng);
-    this.world = new World(this.rng);
-    this.state = 'playing';
-    this.distance = 0;
+  resetRun() {
+    this.stageIndex = 0;
     this.score = 0;
-    this.lives = START_LIVES;
-    this.corn = 0;
-    this.speed = BASE_SPEED;
-    this.speedBurst = 0;
-    this.shake = 0;
-    this.particles = [];
-    this.stageIndex = 0;
-    this.sound.unlock();
+    this.totalDistanceM = 0;
+    this.hearts = TUNING.hearts;
+    this.gap = TUNING.gapStart;
+    this.combo = 0;
+    this.comboMult = 1;
+    this.bestComboMult = 1;
+    this.cornCount = 0;
+    this.turkey = makeTurkey();
+    this.farmer = makeFarmer();
+    this.loadStage(0);
+    this.banner = null;
+  }
+
+  loadStage(i) {
+    this.stageIndex = i;
+    this.layout = buildStageLayout(i, this.seed);
+    // Convert pickup height tags to pixel offsets above the ground.
+    for (const p of this.layout.pickups) {
+      p.yOff = pickupY(p.kind, p.y, p.arc ?? 2);
+    }
+    this.distancePx = 0;
+    this.stage = STAGES[i];
+    this.speed = TUNING.baseSpeed + this.stage.speed;
+    this.showBanner(this.stage.name, this.stage.sub, 1.8);
+  }
+
+  get distanceM() {
+    return this.totalDistanceM + this.distancePx / PX;
+  }
+
+  showBanner(title, sub, seconds) {
+    this.banner = { title, sub, timer: seconds, max: seconds };
+  }
+
+  startRun() {
+    this.resetRun();
+    this.state = 'playing';
+    this.stateTimer = 0;
+    this.sound.ensure();
     this.sound.startMusic();
-    this.sound.gobble();
+    this.sound.click();
   }
 
-  burst(x, y, color, n = 14) {
-    for (let i = 0; i < n; i++) {
-      const a = this.rng.range(0, Math.PI * 2);
-      const v = this.rng.range(60, 260);
-      this.particles.push({
-        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80,
-        life: this.rng.range(0.4, 0.9), max: 0.9, color, size: this.rng.range(2, 5),
-      });
-    }
-  }
-
-  stumble(hit) {
-    this.lives -= 1;
-    this.farmer.stumbleHit();
-    this.turkey.stumbleTimer = 0.9;
-    this.shake = 0.45;
-    this.sound.thud();
-    this.sound.gobble();
-    this.burst(this.turkey.x, this.turkey.y - 40, '#e8c98a', 18);
-    this.burst(this.turkey.x, this.turkey.y - 40, '#a06a30', 10);
-    if (hit) this.field.remove(hit);
-    if (this.lives <= 0) this.endCaught();
-    else if (this.farmer.caught()) this.endCaught();
-  }
-
-  endCaught() {
-    this.state = 'caught';
-    if (this.score > this.best) this.best = Math.floor(this.score);
-    this.sound.stopMusic();
-    this.sound.lose();
-    this.sound.yell();
-  }
-
-  endEscaped() {
-    this.state = 'escaped';
-    this.score += this.lives * 250;
-    if (this.score > this.best) this.best = Math.floor(this.score);
-    this.sound.stopMusic();
-    this.sound.winFanfare();
-    for (let i = 0; i < 5; i++) {
-      this.burst(this.turkey.x + this.rng.range(-60, 60), GROUND_Y - this.rng.range(60, 200), '#ffd23e', 12);
-    }
-  }
-
+  // ------------------------------------------------------------ update
   update(dt) {
+    if (this.frozen) return;
+    dt = Math.min(dt, 0.05);
     this.time += dt;
-    if (this.shake > 0) this.shake -= dt;
-    for (const p of this.particles) {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 500 * dt;
-      p.life -= dt;
-    }
-    this.particles = this.particles.filter((p) => p.life > 0);
+    this.stateTimer += dt;
 
     if (this.state === 'title') {
-      this.turkey.update(dt, 0, false);
-      this.turkey.blink = this.rng.chance(0.01) ? 0.12 : this.turkey.blink;
-      const click = this.input.takeClick();
-      if (this.input.takeJump() || (click && hitButton('start', click))) {
-        this.input.clearQueues();
-        this.start();
-      }
-      if (this.input.takeMute()) this.toggleMute();
+      this.turkey.runCycle += dt * 6;
+      this.farmer.runCycle += dt * 6;
+      this.farmer.x = turkeyX - 40 - (this.gap / 100) * 230;
+      if (this.input.wasPressed('jump') || this.input.wasPressed('start')) this.startRun();
+      this.input.endFrame();
       return;
     }
 
     if (this.state === 'paused') {
-      const click = this.input.takeClick();
-      if (this.input.takePause() || click) {
+      if (this.input.wasPressed('pause')) {
         this.state = 'playing';
-        this.input.clearQueues();
+        this.sound.click();
+      } else if (this.input.wasPressed('restart')) {
+        this.startRun();
       }
+      this.input.endFrame();
       return;
     }
 
     if (this.state === 'caught' || this.state === 'escaped') {
-      const click = this.input.takeClick();
-      const btn = this.state === 'caught' ? 'restart' : 'again';
-      if (this.input.takeRestart() || this.input.takeJump() || (click && hitButton(btn, click))) {
-        this.input.clearQueues();
-        this.start();
+      // The farmer closes in on the caught turkey.
+      if (this.state === 'caught') {
+        this.farmer.x += (turkeyX - 30 - this.farmer.x) * Math.min(1, dt * 4);
+        this.farmer.runCycle += dt * 8;
       }
+      this.updateParticles(dt);
+      if (this.stateTimer > 0.7 && (this.input.wasPressed('jump') || this.input.wasPressed('restart') || this.input.wasPressed('start'))) {
+        this.startRun();
+      }
+      this.input.endFrame();
+      return;
+    }
+
+    if (this.state === 'stageClear') {
+      this.updateParticles(dt);
+      if (this.stateTimer > 2.2) {
+        if (this.stageIndex >= STAGES.length - 1) {
+          this.finishEscaped();
+        } else {
+          this.loadStage(this.stageIndex + 1);
+          this.state = 'playing';
+          this.stateTimer = 0;
+        }
+      }
+      this.input.endFrame();
       return;
     }
 
     // ---- playing ----
-    if (this.input.takePause()) {
+    const t = this.turkey;
+
+    if (this.input.wasPressed('pause')) {
       this.state = 'paused';
-      this.input.clearQueues();
+      this.stateTimer = 0;
+      this.sound.click();
+      this.input.endFrame();
       return;
     }
-    if (this.input.takeMute()) this.toggleMute();
-    const click = this.input.takeClick();
-    if (click) {
-      if (hitButton('mute', click)) this.toggleMute();
-      else if (hitButton('pause', click)) { this.state = 'paused'; return; }
+    if (this.input.wasPressed('mute')) {
+      const muted = this.sound.toggleMute();
+      this.showBanner(muted ? 'MUTED' : 'SOUND ON', '', 0.9);
+    }
+    if (this.input.wasPressed('restart')) {
+      this.startRun();
+      return;
     }
 
-    const stage = stageFor(this.distance);
-    this.stageIndex = stage.id === 'farmyard' ? 0 : stage.id === 'barn' ? 1 : 2;
-
-    let target = Math.min(MAX_SPEED, BASE_SPEED + this.distance * 0.32);
-    if (this.speedBurst > 0) { target += 120; this.speedBurst -= dt; }
-    if (this.turkey.dashing) target += DASH_SPEED_BONUS;
-    const box = this.turkey.box();
-    if (this.field.inMud(box)) target *= 0.55;
-    this.speed = target;
-
-    if (this.input.takeJump()) {
-      if (this.turkey.jump()) this.sound.jump();
-    }
-    if (this.input.takeDash()) {
-      if (this.turkey.dash()) {
-        this.sound.dash();
-        this.farmer.dashBonus();
+    // Moves. A jump pressed a fraction before landing is buffered, and
+    // jumping ends a dash: a dash-jump would fly too far to land safely.
+    if (this.input.wasPressed('jump')) this.jumpBuffer = 0.12;
+    if (this.jumpBuffer > 0) {
+      this.jumpBuffer -= dt;
+      if (t.onGround) {
+        this.jumpBuffer = 0;
+        t.vy = TUNING.jumpVelocity;
+        t.onGround = false;
+        t.sliding = false;
+        t.slideTimer = 0;
+        t.dashing = false;
+        t.dashTimer = 0;
+        this.sound.jump();
+        this.burst(t.x - 10, G, '#d8c49a', 5);
       }
     }
+    if (this.input.wasPressed('slide') && t.onGround && !t.sliding) {
+      t.sliding = true;
+      t.slideTimer = TUNING.slideTime;
+      t.dashing = false; // sliding ends a dash, like jumping does
+      t.dashTimer = 0;
+      this.sound.slide();
+    }
+    // A dash is a ground move: it never fires mid-air, so a dash can never
+    // stretch a jump past the next hazard.
+    if (this.input.wasPressed('dash') && t.dashCooldown <= 0 && t.onGround) {
+      t.dashing = true;
+      t.dashTimer = TUNING.dashTime;
+      t.dashCooldown = TUNING.dashCooldown;
+      this.sound.dash();
+    }
 
-    this.turkey.update(dt, this.speed, this.input.sliding());
-    this.distance += (this.speed * dt) / PX_PER_METRE;
-    this.score += (this.speed * dt) / PX_PER_METRE * 2;
-    this.farmer.update(dt, this.speed, this.stageIndex);
-    this.field.update(dt, this.distance, this.speed, stage);
+    // Timers.
+    if (t.slideTimer > 0) {
+      t.slideTimer -= dt;
+      if (t.slideTimer <= 0) t.sliding = false;
+    }
+    if (t.dashTimer > 0) {
+      t.dashTimer -= dt;
+      if (t.dashTimer <= 0) t.dashing = false;
+    }
+    if (t.dashCooldown > 0) t.dashCooldown -= dt;
+    if (t.invincible > 0) t.invincible -= dt;
+    if (t.chili > 0) t.chili -= dt;
 
-    // Hazard cleared: points for every danger you get past.
-    for (const it of this.field.items) {
-      if (!it.counted && HAZARDS[it.kind] && it.x + it.w < this.turkey.x - 40) {
-        it.counted = true;
-        this.score += HAZARDS[it.kind].score;
+    // Vertical physics.
+    if (!t.onGround) {
+      t.vy += TUNING.gravity * dt;
+      t.y += t.vy * dt;
+      if (t.y >= G) {
+        t.y = G;
+        t.vy = 0;
+        t.onGround = true;
+        if (t.wasAir) this.sound.land();
+        t.wasAir = false;
       }
+    } else {
+      t.wasAir = true;
     }
 
-    // Collectibles.
-    for (const it of this.field.collect(this.turkey.box())) {
-      if (it.kind === 'corn') {
-        this.score += 50;
-        this.corn += 1;
-        this.farmer.reward(6);
-        this.sound.coin();
-        this.burst(it.x, it.y, '#ffd23e', 8);
-      } else if (it.kind === 'feather') {
-        this.score += 150;
-        this.farmer.reward(10);
-        this.turkey.dashCooldown = 0;
-        this.speedBurst = 1.2;
-        this.sound.feather();
-        this.burst(it.x, it.y, '#ffc93c', 14);
-      } else if (it.kind === 'pie') {
-        this.score += 100;
-        this.lives = Math.min(3, this.lives + 1);
-        this.farmer.reward(4);
-        this.sound.coin();
-        this.burst(it.x, it.y, '#e8912d', 10);
+    // Forward motion. The dash multiplier only counts on the ground: a
+    // chili grabbed mid-air must never stretch the jump past the next hazard.
+    const speed = this.speed * (t.dashing && t.onGround ? TUNING.dashSpeed : 1);
+    this.distancePx += speed * dt;
+    this.score += speed * dt * 0.02;
+    t.runCycle += dt * (speed / 28);
+    this.farmer.runCycle += dt * (speed / 28);
+
+    // The farmer gains ground every second; dashing and corn push him back.
+    this.gap -= TUNING.gapDrain * dt;
+    if (t.dashing) this.gap += TUNING.gapDash * dt;
+    this.gap = Math.min(100, this.gap);
+    this.farmer.x = turkeyX - 40 - (this.gap / 100) * 230;
+
+    this.checkCollisions();
+    this.updateParticles(dt);
+
+    if (this.banner) {
+      this.banner.timer -= dt;
+      if (this.banner.timer <= 0) this.banner = null;
+    }
+
+    // Stage done?
+    if (this.distancePx >= this.layout.lengthPx) {
+      this.totalDistanceM += this.layout.lengthPx / PX;
+      const bonus = TUNING.stageBonus * (this.stageIndex + 1);
+      this.score += bonus;
+      this.gap = Math.min(100, this.gap + TUNING.gapStageBonus);
+      this.state = 'stageClear';
+      this.stateTimer = 0;
+      this.sound.stageClear();
+      this.showBanner(
+        this.stageIndex === STAGES.length - 1 ? 'FREEDOM!' : 'STAGE CLEAR!',
+        `+${bonus} bonus · the farmer falls behind`,
+        2.2,
+      );
+      this.confetti();
+    } else if (this.hearts <= 0 || this.gap <= 0) {
+      this.finishCaught();
+    }
+
+    this.input.endFrame();
+  }
+
+  // -------------------------------------------------------- collisions
+  checkCollisions() {
+    const t = this.turkey;
+    const twx = this.distancePx + turkeyX;
+    const tb = turkeyBox(t);
+    tb.x = twx - t.w / 2 + 4; // world coordinates for the checks below
+
+    for (const o of this.layout.obstacles) {
+      if (o.hit || o.passed) continue;
+      if (o.x + o.w < twx - 20) {
+        o.passed = true;
+        continue;
       }
-    }
-
-    // Hit a hazard: lose a heart, Jed closes in.
-    const hit = this.field.hitTest(this.turkey.box());
-    if (hit && this.turkey.stumbleTimer <= 0) this.stumble(hit);
-
-    if (this.farmer.caught() && this.state === 'playing') this.endCaught();
-    if (this.distance >= GOAL_DISTANCE && this.state === 'playing') {
-      this.distance = GOAL_DISTANCE;
-      this.endEscaped();
-    }
-  }
-
-  toggleMute() {
-    this.sound.unlock();
-    this.sound.setMuted(!this.sound.muted);
-  }
-
-  draw() {
-    const ctx = this.ctx;
-    ctx.save();
-    if (this.shake > 0) {
-      const s = this.shake * 22;
-      ctx.translate((Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
-    }
-    const stage = stageFor(this.distance);
-    this.world.draw(ctx, stage, this.distance, this.time);
-    this.field.draw(ctx, this.time);
-    if (this.state !== 'title') this.farmer.draw(ctx, this.turkey.x, this.time);
-    // The forest gate at the end of the run.
-    if (this.distance > GOAL_DISTANCE - 90) {
-      const gateX = VIEW_W + (GOAL_DISTANCE - this.distance) * PX_PER_METRE * 1.6;
-      ctx.save();
-      ctx.fillStyle = '#4e8a2f';
-      ctx.fillRect(gateX, GROUND_Y - 150, 14, 150);
-      ctx.fillRect(gateX + 120, GROUND_Y - 150, 14, 150);
-      ctx.fillStyle = '#6aa844';
-      ctx.fillRect(gateX, GROUND_Y - 150, 134, 16);
-      ctx.fillStyle = '#fff8e6';
-      ctx.font = 'bold 15px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('FOREST — FREEDOM!', gateX + 67, GROUND_Y - 162);
-      ctx.restore();
-    }
-    this.turkey.draw(ctx, this.time);
-    for (const p of this.particles) {
-      ctx.globalAlpha = Math.max(0, p.life / p.max);
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    ctx.restore();
-
-    const hudState = {
-      score: Math.floor(this.score),
-      distance: this.distance,
-      lives: this.lives,
-      best: this.best,
-      stageName: stage.name,
-      farmerGap: Math.round(this.farmer.gap),
-      dashReady: this.turkey.dashCooldown <= 0 ? 1 : 1 - this.turkey.dashCooldown / 2.2,
-      muted: this.sound.muted,
-      corn: this.corn,
-    };
-    if (this.state === 'playing' || this.state === 'paused') drawHUD(ctx, hudState);
-    if (this.state === 'title') drawTitle(ctx, hudState, this.time);
-    if (this.state === 'paused') drawPaused(ctx);
-    if (this.state === 'caught') drawCaught(ctx, hudState);
-    if (this.state === 'escaped') drawEscaped(ctx, hudState);
-  }
-
-  // ---- screenshot scenes: fixed, deterministic states of the real game ----
-  shot(mode, seed) {
-    this.seed = seed;
-    if (mode === 'title') {
-      this.state = 'title';
-      return;
-    }
-    this.start();
-    if (mode === 'play') {
-      this.fastForward(7, true); // ~420 m, mid-run in the barn stage
-      return;
-    }
-    if (mode === 'caught') {
-      this.fastForward(6, true); // ~350 m, then Jed catches her
-      this.lives = 1;
-      this.farmer.gap = 2;
-      this.stumble(this.field.items.find((it) => HAZARDS[it.kind]) || null);
-      return;
-    }
-    if (mode === 'escaped') {
-      this.fastForward(12, true); // ~840 m, then she bursts through the gate
-      this.distance = GOAL_DISTANCE;
-      this.score = 3120;
-      this.corn = 18;
-      this.endEscaped();
-    }
-  }
-
-  // Step the real update loop forward, auto-jumping over hazards, so a
-  // screenshot shows a mid-run scene with the HUD alive.
-  fastForward(seconds, autoPlay) {
-    const steps = Math.floor(seconds * 60);
-    for (let i = 0; i < steps; i++) {
-      if (this.state !== 'playing') break;
-      if (autoPlay) {
-        const box = this.turkey.box();
-        for (const it of this.field.items) {
-          if (!HAZARDS[it.kind]) continue;
-          const ahead = it.x - (box.x + box.w);
-          if (ahead > 0 && ahead < 190 && this.turkey.onGround) {
-            if (it.kind === 'knife') {
-              // Wait for the blade to swing away, then jump late.
-              if (Math.sin(it.swing) < 0.2) this.turkey.jump();
-            } else {
-              this.turkey.jump();
-            }
-            break;
-          }
+      const ob = obstacleBox(o, G);
+      const hitBox = { x: o.x, y: ob.y, w: o.w, h: ob.h };
+      if (overlaps(tb, hitBox)) {
+        if (o.type === 'pumpkin' && t.dashing) {
+          // Dash-smash: the pumpkin bursts into pie crumbs.
+          o.hit = true;
+          this.score += TUNING.smashScore * this.comboMult;
+          this.burst(o.x - this.distancePx + turkeyX, G - 22, '#e07b28', 12);
+          this.sound.smash();
+          continue;
         }
-        // Grab low corn by staying grounded; nothing else to do.
-      }
-      this.update(1 / 60);
-      // Screenshot autopilot: Tilly cannot die mid-scene, so the shot
-      // always shows a run in play (a skilled player would survive this).
-      if (this.state === 'playing') {
-        this.lives = Math.max(this.lives, 2);
-        this.farmer.gap = Math.max(this.farmer.gap, 40);
+        if (clearsHazard(t, o)) continue;
+        o.hit = true;
+        this.takeHit(o);
       }
     }
+
+    for (const p of this.layout.pickups) {
+      if (p.taken) continue;
+      if (p.x < twx - 60 || p.x > twx + 60) continue;
+      const pb = { x: p.x - 14, y: G - p.yOff - 26, w: 28, h: 28 };
+      if (overlaps(tb, pb)) {
+        p.taken = true;
+        this.collect(p);
+      }
+    }
+  }
+
+  takeHit(o) {
+    const t = this.turkey;
+    if (t.invincible > 0 || t.chili > 0) return;
+    if (t.shield) {
+      t.shield = false;
+      t.invincible = TUNING.invincibleTime;
+      this.gap = Math.max(0, this.gap - 6);
+      this.burst(t.x, t.y - 30, '#7ec8f2', 12);
+      this.sound.hit();
+      return;
+    }
+    this.hearts -= 1;
+    this.combo = 0;
+    this.comboMult = 1;
+    this.gap = Math.max(0, this.gap - TUNING.gapHit);
+    t.invincible = TUNING.invincibleTime;
+    this.burst(t.x, t.y - 24, '#e2574c', 14);
+    this.sound.hit();
+  }
+
+  collect(p) {
+    const t = this.turkey;
+    this.cornCount += 1;
+    if (p.kind === 'corn' || p.kind === 'golden') {
+      this.combo += 1;
+      // The multiplier tops out at x8: a long corn streak is rewarded, but
+      // the score must stay bounded and fair.
+      this.comboMult = Math.min(8, 1 + Math.floor(this.combo / 5));
+      this.bestComboMult = Math.max(this.bestComboMult, this.comboMult);
+    }
+    const def = PICKUPS[p.kind];
+    this.score += def.score * this.comboMult;
+    this.gap = Math.min(100, this.gap + def.gap);
+    if (p.kind === 'golden') {
+      this.sound.golden();
+      this.burst(p.x - this.distancePx + turkeyX, G - p.yOff, '#ffd23c', 10);
+    } else if (p.kind === 'corn') {
+      this.sound.corn(this.combo);
+    } else if (p.kind === 'feather') {
+      t.shield = true;
+      this.sound.power();
+      this.showBanner('FEATHER SHIELD!', 'One hit blocked — nice catch', 1.2);
+    } else if (p.kind === 'chili') {
+      t.chili = 3;
+      if (t.onGround) {
+        t.dashing = true;
+        t.dashTimer = Math.max(t.dashTimer, 0.6);
+      }
+      this.sound.power();
+      this.showBanner('HOT CHILI!', 'Unstoppable for 3 seconds!', 1.2);
+    } else if (p.kind === 'pie') {
+      this.hearts = Math.min(TUNING.hearts, this.hearts + 1);
+      this.sound.power();
+      this.showBanner('PUMPKIN PIE!', '+1 heart — delicious', 1.2);
+    }
+  }
+
+  finishCaught() {
+    this.state = 'caught';
+    this.stateTimer = 0;
+    this.best = Math.max(this.best, this.score);
+    this.sound.stopMusic();
+    this.sound.caught();
+  }
+
+  finishEscaped() {
+    this.state = 'escaped';
+    this.stateTimer = 0;
+    this.best = Math.max(this.best, this.score);
+    this.sound.stopMusic();
+    this.sound.escaped();
+    this.confetti();
+  }
+
+  // --------------------------------------------------------- particles
+  burst(x, y, color, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = 40 + Math.random() * 120;
+      this.particles.push({
+        x, y,
+        vx: Math.cos(a) * v,
+        vy: Math.sin(a) * v - 40,
+        r: 2 + Math.random() * 3,
+        life: 0.5 + Math.random() * 0.4,
+        max: 0.9,
+        color,
+      });
+    }
+  }
+
+  confetti() {
+    const cols = ['#ffd23c', '#e2574c', '#7ec850', '#7ec8f2', '#f2a541'];
+    for (let i = 0; i < 60; i++) {
+      this.particles.push({
+        x: 100 + Math.random() * 760,
+        y: 60 + Math.random() * 120,
+        vx: (Math.random() - 0.5) * 60,
+        vy: 40 + Math.random() * 80,
+        r: 3 + Math.random() * 3,
+        life: 1.2 + Math.random() * 0.8,
+        max: 2,
+        color: cols[i % cols.length],
+      });
+    }
+  }
+
+  updateParticles(dt) {
+    for (const pt of this.particles) {
+      pt.x += pt.vx * dt;
+      pt.y += pt.vy * dt;
+      pt.vy += 220 * dt;
+      pt.life -= dt;
+    }
+    this.particles = this.particles.filter((pt) => pt.life > 0);
+  }
+
+  // ------------------------------------------------------------ render
+  render() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, 960, 540);
+    if (this.state === 'title') {
+      drawTitle(ctx, this);
+    } else if (this.state === 'caught' || this.state === 'escaped') {
+      drawEnd(ctx, this, this.state === 'escaped');
+    } else {
+      drawScene(ctx, this);
+      drawHUD(ctx, this);
+      if (this.banner) {
+        drawBanner(ctx, this.banner.title, this.banner.sub, Math.min(1, this.banner.timer / 0.4));
+      }
+      if (this.state === 'paused') drawPaused(ctx, this);
+    }
+  }
+
+  // Step once, for headless testing: same path the live loop uses.
+  step(dt) {
+    this.update(dt);
+    this.render();
+  }
+
+  debugState() {
+    return {
+      state: this.state,
+      stage: this.stageIndex + 1,
+      score: Math.floor(this.score),
+      distanceM: Math.floor(this.distanceM),
+      hearts: this.hearts,
+      gap: Math.round(this.gap * 10) / 10,
+      combo: this.combo,
+      comboMult: this.comboMult,
+      corn: this.cornCount,
+      turkeyY: Math.round(this.turkey.y),
+      onGround: this.turkey.onGround,
+      dashCooldown: Math.round(this.turkey.dashCooldown * 100) / 100,
+      obstacles: this.layout.obstacles.length,
+      pickups: this.layout.pickups.length,
+    };
   }
 }

@@ -1,40 +1,32 @@
-// Boot for Turkey Run!: canvas, input, the game loop, screenshot scenes.
-// One job: start the game and keep its frames coming.
+// Gobble Dash — bootstrap. One job: read the URL, build the game, run the
+// loop. ?seed=N fixes the run's random seed; ?shot=start|play|kitchen|end
+// poses a frozen frame for screenshots.
 
-import { VIEW_H, VIEW_W } from './config.js';
-import { Input } from './input.js';
 import { Game } from './game.js';
+import { applyShot } from './shots.js';
+import { DEFAULT_SEED } from './config.js';
 
 const canvas = document.getElementById('game');
-canvas.width = VIEW_W;
-canvas.height = VIEW_H;
+const params = new URLSearchParams(location.search);
+const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
+const seed = Number.isFinite(seedParam) ? seedParam : DEFAULT_SEED;
 
-const params = new URLSearchParams(window.location.search);
-const seed = Number(params.get('seed') || '20261128') || 20261128;
+const game = new Game(canvas, { seed });
+window.__TURKEY = game; // for play-testing and debugging
+
 const shot = params.get('shot');
-
-const input = new Input(canvas);
-const game = new Game(canvas, input, seed);
-
-// Deterministic screenshot scenes (?shot=title|play|caught|escaped&seed=N):
-// the game itself renders them, so the screenshots are real renders.
 if (shot) {
-  game.shot(shot, seed);
-  game.draw();
+  applyShot(game, shot, seed);
 } else {
+  game.render();
   let last = performance.now();
-  const frame = (now) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
+  const loop = (now) => {
+    const dt = (now - last) / 1000;
     last = now;
-    if (input.anyGesture) game.sound.unlock();
-    game.update(dt);
-    game.draw();
-    requestAnimationFrame(frame);
+    // window.__TURKEY_HOLD lets a play-test drive the game step by step
+    // without the live loop double-stepping it.
+    if (!window.__TURKEY_HOLD) game.step(dt);
+    requestAnimationFrame(loop);
   };
-  requestAnimationFrame(frame);
+  requestAnimationFrame(loop);
 }
-
-// Mark the page ready (used by the screenshot harness, not by the game).
-document.body.dataset.ready = '1';
-document.title = 'Turkey Run! — The Great Thanksgiving Escape';
-window.__game = game;

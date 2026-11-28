@@ -1,39 +1,21 @@
-// Tiny static server for playing Turkey Run! locally.
-// Serves game/ at http://localhost:8080 — no build step, no network.
-// Run: node serve.ts
-
+// Tiny static server for local play-testing: serves game/ at
+// http://localhost:8080 with no network use. Run: node serve.ts
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const root = join(here, 'game');
-const port = Number(process.env.PORT || '8080');
+const root = fileURLToPath(new URL('game', import.meta.url));
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg' };
 
-const types = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-};
-
-const server = createServer((req, res) => {
-  const path = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
-  const file = join(root, path === '/' ? 'index.html' : path);
-  if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
-    res.writeHead(404, { 'content-type': 'text/plain' });
-    res.end('not found\n');
-    return;
+createServer(async (req, res) => {
+  const path = req.url.split('?')[0] === '/' ? '/index.html' : req.url.split('?')[0];
+  try {
+    const data = await readFile(join(root, decodeURIComponent(path)));
+    res.writeHead(200, { 'Content-Type': types[extname(path)] ?? 'application/octet-stream' });
+    res.end(data);
+  } catch {
+    res.writeHead(404);
+    res.end('not found');
   }
-  res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });
-  createReadStream(file).pipe(res);
-});
-
-server.listen(port, () => {
-  console.log(`Turkey Run! at http://localhost:${port}`);
-});
+}).listen(8080, () => console.log('Gobble Dash at http://localhost:8080'));

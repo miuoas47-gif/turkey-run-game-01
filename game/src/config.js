@@ -1,114 +1,133 @@
-// Tuning, stages and the autumn palette for Turkey Run!
-// One job: every number the rest of the game agrees on lives here.
+// Gobble Dash — configuration: view, tuning, and the five escape stages.
+// One clear job: every number the game balances on lives here, so tuning
+// never hides inside the update loop or the renderer.
 
-export const VIEW_W = 960;
-export const VIEW_H = 540;
-export const GROUND_Y = 462;
-export const PLAYER_X = 190;
+export const VIEW = {
+  w: 960,
+  h: 540,
+  ground: 470, // y of the dirt the turkey runs on
+  turkeyX: 170, // the turkey stays here; the world scrolls past it
+};
 
-export const GOAL_DISTANCE = 1000; // metres to the forest gate
-export const START_LIVES = 3;
-export const GRAVITY = 2600;
-export const JUMP_VELOCITY = -880;
-export const DASH_TIME = 0.45;
-export const DASH_COOLDOWN = 2.2;
-export const DASH_SPEED_BONUS = 260;
+export const TUNING = {
+  gravity: 2300,
+  jumpVelocity: -880,
+  baseSpeed: 265, // px/s on stage 1
+  speedPerStage: 26,
+  dashSpeed: 2.05, // speed multiplier while dashing
+  dashTime: 0.45,
+  dashCooldown: 2.2,
+  slideTime: 0.75,
+  invincibleTime: 1.3,
+  gapStart: 68, // farmer gap meter, 0 = caught, 100 = far behind
+  gapDrain: 1.15, // farmer gains this much per second, always
+  gapHit: 20, // gap lost when an obstacle is hit
+  gapCorn: 2.5, // gap regained per corn
+  gapDash: 1.6, // gap regained per second of dashing
+  gapStageBonus: 14, // gap regained when a stage is cleared
+  hearts: 3,
+  pxPerMetre: 12,
+  cornScore: 25,
+  goldenScore: 150,
+  smashScore: 50, // dashing through a rolling pumpkin
+  stageBonus: 500,
+};
 
-// Speed in px/s at the start, growing with distance. px per metre is 6.
-export const BASE_SPEED = 300;
-export const MAX_SPEED = 620;
-export const PX_PER_METRE = 6;
-
+// Five stages of one escape: the farmyard, the cornfield, the barn, the
+// kitchen (oven and carving knives), and the forest road to freedom.
 export const STAGES = [
   {
-    id: 'farmyard',
-    name: 'The Farmyard',
-    from: 0,
-    to: 300,
-    skyTop: '#f9b95c',
-    skyBottom: '#ffe9b8',
-    hill: '#c98f3d',
-    hillFar: '#e0aa58',
-    ground: '#b97e35',
-    groundTop: '#d9a44a',
-    accent: '#7a4a1f',
+    name: '1 · THE FARMYARD',
+    sub: 'Out of the pen — mind the fences!',
+    lengthM: 650,
+    speed: 0,
+    sky: ['#ffd9a0', '#ffb36b'],
+    hill: '#c98f4a',
+    ground: '#a9713a',
+    grass: '#7fae4e',
+    accent: '#e2574c',
+    obstacles: ['fence', 'haybale', 'puddle', 'pumpkin'],
+    density: 1.0,
   },
   {
-    id: 'barn',
-    name: 'The Old Barn',
-    from: 300,
-    to: 650,
-    skyTop: '#e08a4e',
-    skyBottom: '#f7cf8e',
-    hill: '#8a5a2b',
-    hillFar: '#b57a3a',
-    ground: '#8a5a28',
-    groundTop: '#a9743a',
-    accent: '#5d3a17',
+    name: '2 · THE CORNFIELD',
+    sub: 'Hide between the stalks — the dog is loose!',
+    lengthM: 800,
+    speed: 26,
+    sky: ['#ffe9a8', '#ffc46b'],
+    hill: '#d9a441',
+    ground: '#b07f35',
+    grass: '#d8b13c',
+    accent: '#8a5a2b',
+    obstacles: ['fence', 'scarecrow', 'dog', 'puddle', 'pumpkin'],
+    density: 1.12,
   },
   {
-    id: 'kitchen',
-    name: 'The Kitchen!',
-    from: 650,
-    to: 1000,
-    skyTop: '#c96a3e',
-    skyBottom: '#f2b06a',
-    hill: '#6e3f22',
-    hillFar: '#96582e',
-    ground: '#7c4a26',
-    groundTop: '#9c6238',
-    accent: '#4a2a12',
+    name: '3 · THE BARN',
+    sub: 'Dark, dusty, full of low beams. Slide!',
+    lengthM: 950,
+    speed: 52,
+    sky: ['#e8b07e', '#c97e4e'],
+    hill: '#8a5a34',
+    ground: '#6e4526',
+    grass: '#9c6b3d',
+    accent: '#5d3a1e',
+    obstacles: ['haybale', 'beam', 'puddle', 'pumpkin', 'fence'],
+    density: 1.25,
+  },
+  {
+    name: '4 · THE KITCHEN',
+    sub: 'The oven! The carving knife! Run, turkey, run!',
+    lengthM: 1100,
+    speed: 78,
+    sky: ['#ffcf9e', '#f59a5e'],
+    hill: '#b06a3c',
+    ground: '#8a4f2c',
+    grass: '#c97e4e',
+    accent: '#d63c2f',
+    obstacles: ['oven', 'knife', 'pot', 'puddle', 'haybale'],
+    density: 1.4,
+  },
+  {
+    name: '5 · THE FOREST ROAD',
+    sub: 'Almost free — the gate is just ahead!',
+    lengthM: 1250,
+    speed: 104,
+    sky: ['#cfe8b0', '#8fc47a'],
+    hill: '#5d8a4a',
+    ground: '#4c6e3a',
+    grass: '#6fa055',
+    accent: '#f2c14e',
+    obstacles: ['log', 'branch', 'dog', 'pumpkin', 'fence', 'puddle'],
+    density: 1.55,
   },
 ];
 
-export function stageFor(distance) {
-  for (const s of STAGES) {
-    if (distance < s.to) return s;
-  }
-  return STAGES[STAGES.length - 1];
-}
-
-// Hazard kinds. w/h are collision box sizes; drawHeight is visual height.
-export const HAZARDS = {
-  fence: { w: 26, h: 74, score: 10, label: 'fence' },
-  hay: { w: 64, h: 58, score: 10, label: 'hay bale' },
-  crate: { w: 56, h: 62, score: 10, label: 'crate' },
-  pitchfork: { w: 22, h: 88, score: 15, label: 'pitchfork' },
-  oven: { w: 92, h: 118, score: 20, label: 'oven' },
-  knife: { w: 30, h: 96, score: 20, label: 'carving knife' },
-  pin: { w: 54, h: 54, score: 15, label: 'rolling pin' },
+// Obstacle catalogue: how big it is, how the turkey beats it, and how hard
+// it is to clear. counter: 'jump' | 'slide' | 'either' | 'dash' (dash smashes
+// it, jumping over it also works).
+export const OBSTACLES = {
+  fence: { w: 34, h: 52, counter: 'jump', weight: 3 },
+  haybale: { w: 62, h: 44, counter: 'jump', weight: 3 },
+  puddle: { w: 60, h: 12, counter: 'jump', weight: 2 },
+  pumpkin: { w: 44, h: 44, counter: 'dash', weight: 2 },
+  scarecrow: { w: 40, h: 78, counter: 'jump', weight: 2 },
+  dog: { w: 66, h: 40, counter: 'jump', weight: 2 },
+  beam: { w: 72, h: 26, counter: 'slide', hang: true, weight: 3 },
+  oven: { w: 96, h: 96, counter: 'jump', weight: 3 },
+  knife: { w: 30, h: 88, counter: 'jump', swing: true, weight: 2 },
+  pot: { w: 56, h: 30, counter: 'slide', hang: true, weight: 2 },
+  log: { w: 78, h: 34, counter: 'jump', weight: 3 },
+  branch: { w: 76, h: 22, counter: 'slide', hang: true, weight: 2 },
 };
 
-// Which hazards each stage may spawn, with relative weights.
-export const STAGE_HAZARDS = {
-  farmyard: [['fence', 5], ['hay', 4], ['mud', 3]],
-  barn: [['crate', 4], ['pitchfork', 4], ['fence', 3], ['hay', 3], ['mud', 2]],
-  kitchen: [['oven', 4], ['knife', 5], ['pin', 4], ['crate', 2]],
+// Pickup catalogue.
+export const PICKUPS = {
+  corn: { score: 25, gap: 2.5 },
+  golden: { score: 150, gap: 5 },
+  feather: { score: 50, gap: 0 }, // shield: blocks one hit
+  chili: { score: 75, gap: 0 }, // hot dash: instant dash + 3 s invincible
+  pie: { score: 100, gap: 8 }, // restores one heart
 };
 
-export const COLLECTIBLES = {
-  corn: { points: 50, gap: 6, label: 'corn' },
-  feather: { points: 150, gap: 10, label: 'golden feather' },
-  pie: { points: 100, gap: 4, label: 'pumpkin pie' },
-};
-
-export const PALETTE = {
-  turkeyBody: '#8a5a2b',
-  turkeyDark: '#6b4420',
-  turkeyLight: '#b07a3e',
-  turkeyHead: '#e8b04b',
-  wattle: '#d43d2a',
-  beak: '#e8912d',
-  featherBrown: '#a06a30',
-  featherCream: '#e8c98a',
-  farmerShirt: '#4a7ab5',
-  farmerOveralls: '#3d5a80',
-  farmerSkin: '#f2c89b',
-  farmerHat: '#7a5a2e',
-  knifeBlade: '#dfe6ea',
-  knifeHandle: '#5a3a1e',
-  ovenBody: '#5e5e66',
-  ovenDoor: '#2e2e33',
-  cornYellow: '#ffd23e',
-  gold: '#ffc93c',
-};
+export const DEFAULT_SEED = 20261128;

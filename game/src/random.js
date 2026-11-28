@@ -1,44 +1,40 @@
-// Deterministic seeded random numbers (mulberry32) for Turkey Run!
-// One job: every random choice in the game comes from here, so a fixed seed
-// always plays the same run.
-
-export function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function next() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// Seeded random numbers (mulberry32). The whole escape is generated from
+// one seed, so the same seed always builds the same farm, the same kitchen,
+// the same forest — a run can be replayed exactly, and the screenshots are
+// reproducible.
 
 export function makeRng(seed) {
-  const next = mulberry32(seed);
+  let a = seed >>> 0;
   return {
-    next,
-    // float in [min, max)
+    next() {
+      a |= 0;
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
     range(min, max) {
-      return min + next() * (max - min);
+      return min + this.next() * (max - min);
     },
-    // integer in [min, max]
     int(min, max) {
-      return Math.floor(min + next() * (max - min + 1));
+      return Math.floor(this.range(min, max + 1));
     },
-    // pick one entry from a weighted table of [value, weight]
-    weighted(table) {
-      let total = 0;
-      for (const [, w] of table) total += w;
-      let roll = next() * total;
-      for (const [value, w] of table) {
-        roll -= w;
-        if (roll <= 0) return value;
-      }
-      return table[table.length - 1][0];
+    pick(list) {
+      return list[Math.floor(this.next() * list.length)];
     },
-    // true with probability p
     chance(p) {
-      return next() < p;
+      return this.next() < p;
+    },
+    // Weighted pick from [{item, weight}] entries.
+    weighted(entries) {
+      let total = 0;
+      for (const e of entries) total += e.weight;
+      let roll = this.next() * total;
+      for (const e of entries) {
+        roll -= e.weight;
+        if (roll <= 0) return e.item;
+      }
+      return entries[entries.length - 1].item;
     },
   };
 }

@@ -3,16 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Turkey Run! — The Great Thanksgiving Escape</title>
-<meta name="description" content="Tilly the turkey escapes Farmer Jed before Thanksgiving: jump fences, dodge ovens and carving knives, and reach the forest gate 1000 m away. An original game built for make.fun.">
-<link rel="stylesheet" href="./style.css">
+<title>Gobble Dash — The Great Turkey Escape</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #2b1d12;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #wrap {
+    width: min(100vw, calc(100vh * 16 / 9));
+    aspect-ratio: 16 / 9;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: auto;
+    cursor: pointer;
+    background: #ffd9a0;
+  }
+</style>
 </head>
 <body>
-<main class="stage">
-  <canvas id="game" width="960" height="540" aria-label="Turkey Run game canvas"></canvas>
-  <p class="hint">SPACE / click — jump &nbsp;·&nbsp; ↓ — slide &nbsp;·&nbsp; SHIFT — dash &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mute</p>
-  <noscript><p class="hint">Turkey Run! needs JavaScript to play.</p></noscript>
-</main>
+<div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
